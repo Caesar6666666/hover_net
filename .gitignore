@@ -4,6 +4,7 @@
 # directories
 cache/
 dataset/
+data/
 exp_output/
 
 # checkpoint paths
