@@ -13,22 +13,29 @@ slide = openslide.OpenSlide(slide_path)
 output_dir = 'tiles'
 os.makedirs(output_dir, exist_ok=True)
 
+blank_output_dir = 'blank_tiles'
+os.makedirs(blank_output_dir, exist_ok=True)
 # 设置要裁剪的小图尺寸
-tile_size = (1000,1000)
+tile_size = (1000, 1000)
 
-# 选择缩放级别，0是最高分辨率，数字越大分辨率越低
+# 选择缩放级别，0是最高分辨率
 level = 0
 
 # 获取指定级别下的图像大小
 level_width, level_height = slide.level_dimensions[level]
 print(f"Level {level} dimensions: {level_width} x {level_height}")
+
 # 计算在指定级别下能裁剪出多少个小图
 cols, rows = level_width // tile_size[0], level_height // tile_size[1]
 
 # 设置空白/黑色图片的阈值
-blank_black_threshold = 0.96  # 如果图片中超过80%的像素是空白或黑色的，那么我们就认为这是一张空白/黑色图片
+invalid_pixel_threshold = 0.96  # 如果图片中超过96%的像素是空白或黑色的，那么我们就认为这是一张空白/黑色图片
 
-count = 0
+# 存储废弃的小图
+discarded_tiles = []
+
+useful_tiles = []
+
 # 裁剪并保存小图
 for row in range(rows):
     for col in range(cols):
@@ -40,28 +47,55 @@ for row in range(rows):
         region = region.convert("RGB")
         # 将图像转换为NumPy数组以便分析
         region_np = np.array(region)
+        white_pixels = np.sum(np.all(region_np >= [240, 240, 240], axis=2))  # 定义接近白色的阈值
+        black_pixels = np.sum(np.all(region_np <= [15, 15, 15], axis=2))  # 定义接近黑色的阈值
+        total_pixels = region_np.shape[0] * region_np.shape[1]
+        
+        # 如果无效像素比例超过阈值，则认为图片无效
+        if (white_pixels + black_pixels) / total_pixels > invalid_pixel_threshold:
+            discarded_tiles.append(region)
+            # 当达到100张废弃图片时，拼接并保存
+            if len(discarded_tiles) == 100:
+                # 拼接图片
+                stitched_image = Image.new('RGB', (10 * tile_size[0], 10 * tile_size[1]))
+                for i, tile in enumerate(discarded_tiles):
+                    stitched_image.paste(tile, ((i % 10) * tile_size[0], (i // 10) * tile_size[1]))
+                # 缩放图片
+                stitched_image = stitched_image.resize((int(stitched_image.width / 20), int(stitched_image.height / 20)))
+                # 保存图片
+                stitched_image.save(os.path.join(blank_output_dir, f"discarded_stitched_{row}_{col}.png"))
+                # 清空废弃图片列表
+                discarded_tiles = []
+            # pass
+        else:
+            useful_tiles.append(region)
+            # 保存图片
+            if len(useful_tiles) == 100:
+                # 拼接图片
+                stitched_image = Image.new('RGB', (10 * tile_size[0], 10 * tile_size[1]))
+                for i, tile in enumerate(useful_tiles):
+                    stitched_image.paste(tile, ((i % 10) * tile_size[0], (i // 10) * tile_size[1]))
+                # 缩放图片
+                stitched_image = stitched_image.resize((int(stitched_image.width / 10), int(stitched_image.height / 10)))
+                # 保存图片
+                stitched_image.save(os.path.join(output_dir, f"useful_stitched_{row}_{col}.png"))
+                # 清空有效图片列表
+                useful_tiles = []
 
-        # # 计算白色和黑色像素的比例
-        # white_pixels = np.sum(np.all(region_np >= 240, axis=2))  # 白色像素的阈值
-        # black_pixels = np.sum(np.all(region_np <= 15, axis=2))    # 黑色像素的阈值
-        # total_pixels = np.product(region_np.shape[:2])
-        # white_black_ratio = (white_pixels + black_pixels) / total_pixels
+# 处理剩余的废弃图片（如果不足100张）
+if discarded_tiles:
+    stitched_image = Image.new('RGB', (10 * tile_size[0], 10 * tile_size[1]))
+    for i, tile in enumerate(discarded_tiles):
+        stitched_image.paste(tile, ((i % 10) * tile_size[0], (i // 10) * tile_size[1]))
+    stitched_image = stitched_image.resize((int(stitched_image.width / 10), int(stitched_image.height / 10)))
+    stitched_image.save(os.path.join(blank_output_dir, f"discarded_stitched_remaining.png"))
 
-        # # 如果白色和黑色像素的比例低于阈值，则保存图片
-        # if white_black_ratio < blank_black_threshold:
-        #     # 保存有用的小图
-        # judge a tile is blank or not
-        # if the tile is blank, then skip it
-        if np.mean(region_np) < 200:
-            # 将图片100张拼成一张图片
-
-            continue
-
-        # tile_name = f"tile_{row}_{col}_level{level}.png"
-        # #将图片缩放0.5倍 保存
-        # region = region.resize((500, 500))
-        # region.save(os.path.join(output_dir, tile_name))
-
+if useful_tiles:
+    stitched_image = Image.new('RGB', (10 * tile_size[0], 10 * tile_size[1]))
+    for i, tile in enumerate(useful_tiles):
+        stitched_image.paste(tile, ((i % 10) * tile_size[0], (i // 10) * tile_size[1]))
+    stitched_image = stitched_image.resize((int(stitched_image.width / 10), int(stitched_image.height / 10)))
+    stitched_image.save(os.path.join(output_dir, f"useful_stitched_remaining.png"))
 # 关闭slide对象
 slide.close()
 
