@@ -1,7 +1,8 @@
 name: hovernet
 channels:
-  - conda-forge
-  - defaults
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
 dependencies:
   - python=3.6.12
   - pip=20.3.1
